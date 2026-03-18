@@ -1,0 +1,226 @@
+---
+title: "Homework 3 MARS"
+author: "Liam Cawley"
+date: "2025-11-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+rm(list= ls()) # Clearing Memory
+```
+
+```{r}
+library(dplyr) # Loading Packages
+library(car)
+library(ggplot2)
+library(tidyverse)
+library(readr)
+library(kableExtra)
+library(knitr)
+library(webshot2)
+library(magick)
+library(survival)
+library(ROCit)
+library(DescTools)
+library(mgcv)
+library(caret)
+library(Metrics)
+library(splines)
+library(segmented)
+library(earth)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(xgboost)
+library(Ckmeans.1d.dp)
+library(pdp)
+library(glmnet)
+```
+
+```{r}
+training <- read.csv("insurance_t.csv") # Loading data
+length(training)
+set.seed(12345) # Set for reproducability of all code
+
+```
+
+```{r}
+validation <- read.csv("insurance_v.csv")
+length(validation)
+```
+
+```{r}
+median(training$CRSCORE, na.rm = TRUE)
+Mode(training$CRSCORE, na.rm = TRUE)
+#table(training$CRSCORE)
+```
+
+```{r}
+# Imputations: 
+colSums(is.na(training))
+```
+
+```{r}
+colSums(is.na(validation))
+```
+
+
+```{r}
+# NA's: ACCTAGE, PHONE, POS, POSAMT, INV, INVBAL, CC, CCBAL, CCPURC, INCOME, LORES, HMVAL, AGE, CRSCORE
+
+# New Imputations: 
+training <- training %>%
+  mutate(ACCTAGE_FLAG = ifelse(is.na(training$ACCTAGE), 1, 0),
+    ACCTAGE = ifelse(is.na(training$ACCTAGE), median(training$ACCTAGE, na.rm = TRUE), training$ACCTAGE),
+    PHONE_FLAG = ifelse(is.na(training$PHONE), 1, 0),
+         PHONE = ifelse(is.na(training$PHONE), median(training$PHONE, na.rm = TRUE), training$PHONE),
+    POS_FLAG = ifelse(is.na(training$POS), 1, 0),
+         POS = ifelse(is.na(training$POS), median(training$POS, na.rm = TRUE), training$POS),
+    POSAMT_FLAG = ifelse(is.na(training$POSAMT), 1, 0),
+         POSAMT = ifelse(is.na(training$POSAMT), median(training$POSAMT, na.rm = TRUE), training$POSAMT),
+    INV_FLAG = ifelse(is.na(training$INV), 1, 0),
+         INV = ifelse(is.na(training$INV), median(training$INV, na.rm = TRUE), training$INV),
+    INVBAL_FLAG = ifelse(is.na(training$INVBAL), 1, 0),
+         INVBAL = ifelse(is.na(training$INVBAL), median(training$INVBAL, na.rm = TRUE), training$INVBAL),
+    CC_FLAG = ifelse(is.na(training$CC), 1, 0),
+         CC = ifelse(is.na(training$CC), median(training$CC, na.rm = TRUE), training$CC),
+    CCBAL_FLAG = ifelse(is.na(training$CCBAL), 1, 0),
+         CCBAL = ifelse(is.na(training$CCBAL), median(training$CCBAL, na.rm = TRUE), training$CCBAL),
+    CCPURC_FLAG = ifelse(is.na(training$CCPURC), 1, 0),
+         CCPURC = ifelse(is.na(training$CCPURC), median(training$CCPURC, na.rm = TRUE), training$CCPURC),
+    INCOME_FLAG = ifelse(is.na(training$INCOME), 1, 0),
+         INCOME = ifelse(is.na(training$INCOME), median(training$INCOME, na.rm = TRUE), training$INCOME),
+    LORES_FLAG = ifelse(is.na(training$LORES), 1, 0),
+         LORES = ifelse(is.na(training$LORES), median(training$LORES, na.rm = TRUE), training$LORES),
+    HMVAL_FLAG = ifelse(is.na(training$HMVAL), 1, 0),
+         HMVAL = ifelse(is.na(training$HMVAL), median(training$HMVAL, na.rm = TRUE), training$HMVAL),
+    AGE_FLAG = ifelse(is.na(training$AGE), 1, 0),
+         AGE = ifelse(is.na(training$AGE), median(training$AGE, na.rm = TRUE), training$AGE),
+    CRSCORE_FLAG = ifelse(is.na(training$CRSCORE), 1, 0),
+         CRSCORE = ifelse(is.na(training$CRSCORE), median(training$CRSCORE, na.rm = TRUE), training$CRSCORE)
+         )
+```
+
+```{r}
+#Validation Imputations
+validation <- validation %>%
+  mutate(ACCTAGE_FLAG = ifelse(is.na(validation$ACCTAGE), 1, 0),
+    ACCTAGE = ifelse(is.na(validation$ACCTAGE), median(training$ACCTAGE, na.rm = TRUE), validation$ACCTAGE),
+    PHONE_FLAG = ifelse(is.na(validation$PHONE), 1, 0),
+         PHONE = ifelse(is.na(validation$PHONE), median(training$PHONE, na.rm = TRUE), validation$PHONE),
+    POS_FLAG = ifelse(is.na(validation$POS), 1, 0),
+         POS = ifelse(is.na(validation$POS), median(training$POS, na.rm = TRUE), validation$POS),
+    POSAMT_FLAG = ifelse(is.na(validation$POSAMT), 1, 0),
+         POSAMT = ifelse(is.na(validation$POSAMT), median(training$POSAMT, na.rm = TRUE), validation$POSAMT),
+    INV_FLAG = ifelse(is.na(validation$INV), 1, 0),
+         INV = ifelse(is.na(validation$INV), median(training$INV, na.rm = TRUE), validation$INV),
+    INVBAL_FLAG = ifelse(is.na(validation$INVBAL), 1, 0),
+         INVBAL = ifelse(is.na(validation$INVBAL), median(training$INVBAL, na.rm = TRUE), validation$INVBAL),
+    CC_FLAG = ifelse(is.na(validation$CC), 1, 0),
+         CC = ifelse(is.na(validation$CC), median(training$CC, na.rm = TRUE), validation$CC),
+    CCBAL_FLAG = ifelse(is.na(validation$CCBAL), 1, 0),
+         CCBAL = ifelse(is.na(validation$CCBAL), median(training$CCBAL, na.rm = TRUE), validation$CCBAL),
+    CCPURC_FLAG = ifelse(is.na(validation$CCPURC), 1, 0),
+         CCPURC = ifelse(is.na(validation$CCPURC), median(training$CCPURC, na.rm = TRUE), validation$CCPURC),
+    INCOME_FLAG = ifelse(is.na(validation$INCOME), 1, 0),
+         INCOME = ifelse(is.na(validation$INCOME), median(training$INCOME, na.rm = TRUE), validation$INCOME),
+    LORES_FLAG = ifelse(is.na(validation$LORES), 1, 0),
+         LORES = ifelse(is.na(validation$LORES), median(training$LORES, na.rm = TRUE), validation$LORES),
+    HMVAL_FLAG = ifelse(is.na(validation$HMVAL), 1, 0),
+         HMVAL = ifelse(is.na(validation$HMVAL), median(training$HMVAL, na.rm = TRUE), validation$HMVAL),
+    AGE_FLAG = ifelse(is.na(validation$AGE), 1, 0),
+         AGE = ifelse(is.na(validation$AGE), median(training$AGE, na.rm = TRUE), validation$AGE),
+    CRSCORE_FLAG = ifelse(is.na(validation$CRSCORE), 1, 0),
+         CRSCORE = ifelse(is.na(validation$CRSCORE), median(training$CRSCORE, na.rm = TRUE), validation$CRSCORE)
+         )
+```
+
+
+MARS Modeling
+```{r}
+# mars model without cross-validation (CV)
+mars <- earth(INS ~ ., data=training, degree=1, glm = list(family = binomial))
+```
+
+```{r}
+summary(mars)
+
+# Mean Absolute Error (MAE)
+# get actuals
+actuals_mars <- training$INS
+
+# get predictions
+predictions_mars <- predict(mars, type = "response")
+
+# Calculate MAE
+mae_mars <- mean(abs(predictions_mars - actuals_mars))
+print(paste("Mean Absolute Error (MAE):", mae_mars))
+```
+Training Data Output
+
+```{r}
+
+train_num <- training
+train_x_num <- model.matrix(INS ~ ., data = training)[, -1] # Requires numeric response (not factor)
+train_y_num <- training$INS
+```
+
+```{r}
+train_num$INS.predict.probs <- as.numeric(predict(mars, newdata = training, type = "response")) # Probabilities for ROC
+
+# Creating ROC curve
+roc.mars <- rocit(score = train_num$INS.predict.probs, # Want probabilities of success for ROC curve
+             class = train_num$INS)
+plot(roc.mars, col = "#1F77B4", lwd = 2, legend = FALSE)
+
+  # Saving ROC values for evaluation
+roc.mars.df <- data.frame(
+  cutoff = roc.mars$Cutoff,
+  TPR = roc.mars$TPR,
+  FPR = roc.mars$FPR, 
+  AUC = roc.mars$AUC
+)
+
+roc.mars.df <- roc.mars.df %>% mutate(
+  specificity = 1 - FPR,
+  youden = TPR + (specificity - 1)
+)
+
+opt.mars.cutoff <- roc.mars.df[which.max(roc.mars.df$youden), ]; opt.mars.cutoff # Printing metrics for the best cutoff
+```
+Validation Data Output
+```{r}
+
+val_num <- validation
+val_x_num <- model.matrix(INS ~ ., data = validation)[, -1] # Requires numeric response (not factor)
+val_y_num <- validation$INS
+```
+
+```{r}
+val_num$INS.predict.probs <- as.numeric(predict(mars, newdata = validation, type = "response")) # Probabilities for ROC
+
+# Creating ROC curve
+roc.mars <- rocit(score = val_num$INS.predict.probs, # Want probabilities of success for ROC curve
+             class = val_num$INS)
+plot(roc.mars, col = "#1F77B4", lwd = 2, legend = FALSE)
+
+  # Saving ROC values for evaluation
+roc.mars.df <- data.frame(
+  cutoff = roc.mars$Cutoff,
+  TPR = roc.mars$TPR,
+  FPR = roc.mars$FPR, 
+  AUC = roc.mars$AUC
+)
+
+roc.mars.df <- roc.mars.df %>% mutate(
+  specificity = 1 - FPR,
+  youden = TPR + (specificity - 1)
+)
+
+opt.mars.cutoff2 <- roc.mars.df[which.max(roc.mars.df$youden), ]; opt.mars.cutoff2 # Printing metrics for the best cutoff
+```
+

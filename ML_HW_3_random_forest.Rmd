@@ -1,0 +1,344 @@
+---
+title: "Homework3 RF Code"
+author: "Liam Cawley"
+date: "2025-11-24"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+rm(list= ls()) # Clearing Memory
+```
+
+```{r}
+library(dplyr) # Loading Packages
+library(car)
+library(ggplot2)
+library(tidyverse)
+library(readr)
+library(kableExtra)
+library(knitr)
+library(webshot2)
+library(magick)
+library(survival)
+library(ROCit)
+library(DescTools)
+library(mgcv)
+library(caret)
+library(Metrics)
+library(splines)
+library(segmented)
+library(earth)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(xgboost)
+library(Ckmeans.1d.dp)
+library(pdp)
+library(glmnet)
+```
+
+Random Forest Stuff
+
+
+```{r}
+training <- read.csv("insurance_t.csv") # Loading data
+length(training)
+set.seed(12345) # Set for reproducability of all code
+
+```
+```{r}
+validation <- read.csv("insurance_v.csv")
+length(validation)
+```
+
+```{r}
+median(training$CRSCORE, na.rm = TRUE)
+Mode(training$CRSCORE, na.rm = TRUE)
+#table(training$CRSCORE)
+```
+
+```{r}
+# Imputations: 
+colSums(is.na(training))
+```
+```{r}
+colSums(is.na(validation))
+```
+
+
+```{r}
+# NA's: ACCTAGE, PHONE, POS, POSAMT, INV, INVBAL, CC, CCBAL, CCPURC, INCOME, LORES, HMVAL, AGE, CRSCORE
+
+# New Imputations: 
+training <- training %>%
+  mutate(ACCTAGE_FLAG = ifelse(is.na(training$ACCTAGE), 1, 0),
+    ACCTAGE = ifelse(is.na(training$ACCTAGE), median(training$ACCTAGE, na.rm = TRUE), training$ACCTAGE),
+    PHONE_FLAG = ifelse(is.na(training$PHONE), 1, 0),
+         PHONE = ifelse(is.na(training$PHONE), median(training$PHONE, na.rm = TRUE), training$PHONE),
+    POS_FLAG = ifelse(is.na(training$POS), 1, 0),
+         POS = ifelse(is.na(training$POS), median(training$POS, na.rm = TRUE), training$POS),
+    POSAMT_FLAG = ifelse(is.na(training$POSAMT), 1, 0),
+         POSAMT = ifelse(is.na(training$POSAMT), median(training$POSAMT, na.rm = TRUE), training$POSAMT),
+    INV_FLAG = ifelse(is.na(training$INV), 1, 0),
+         INV = ifelse(is.na(training$INV), median(training$INV, na.rm = TRUE), training$INV),
+    INVBAL_FLAG = ifelse(is.na(training$INVBAL), 1, 0),
+         INVBAL = ifelse(is.na(training$INVBAL), median(training$INVBAL, na.rm = TRUE), training$INVBAL),
+    CC_FLAG = ifelse(is.na(training$CC), 1, 0),
+         CC = ifelse(is.na(training$CC), median(training$CC, na.rm = TRUE), training$CC),
+    CCBAL_FLAG = ifelse(is.na(training$CCBAL), 1, 0),
+         CCBAL = ifelse(is.na(training$CCBAL), median(training$CCBAL, na.rm = TRUE), training$CCBAL),
+    CCPURC_FLAG = ifelse(is.na(training$CCPURC), 1, 0),
+         CCPURC = ifelse(is.na(training$CCPURC), median(training$CCPURC, na.rm = TRUE), training$CCPURC),
+    INCOME_FLAG = ifelse(is.na(training$INCOME), 1, 0),
+         INCOME = ifelse(is.na(training$INCOME), median(training$INCOME, na.rm = TRUE), training$INCOME),
+    LORES_FLAG = ifelse(is.na(training$LORES), 1, 0),
+         LORES = ifelse(is.na(training$LORES), median(training$LORES, na.rm = TRUE), training$LORES),
+    HMVAL_FLAG = ifelse(is.na(training$HMVAL), 1, 0),
+         HMVAL = ifelse(is.na(training$HMVAL), median(training$HMVAL, na.rm = TRUE), training$HMVAL),
+    AGE_FLAG = ifelse(is.na(training$AGE), 1, 0),
+         AGE = ifelse(is.na(training$AGE), median(training$AGE, na.rm = TRUE), training$AGE),
+    CRSCORE_FLAG = ifelse(is.na(training$CRSCORE), 1, 0),
+         CRSCORE = ifelse(is.na(training$CRSCORE), median(training$CRSCORE, na.rm = TRUE), training$CRSCORE)
+         )
+```
+
+```{r}
+#Validation Imputations
+validation <- validation %>%
+  mutate(ACCTAGE_FLAG = ifelse(is.na(validation$ACCTAGE), 1, 0),
+    ACCTAGE = ifelse(is.na(validation$ACCTAGE), median(training$ACCTAGE, na.rm = TRUE), validation$ACCTAGE),
+    PHONE_FLAG = ifelse(is.na(validation$PHONE), 1, 0),
+         PHONE = ifelse(is.na(validation$PHONE), median(training$PHONE, na.rm = TRUE), validation$PHONE),
+    POS_FLAG = ifelse(is.na(validation$POS), 1, 0),
+         POS = ifelse(is.na(validation$POS), median(training$POS, na.rm = TRUE), validation$POS),
+    POSAMT_FLAG = ifelse(is.na(validation$POSAMT), 1, 0),
+         POSAMT = ifelse(is.na(validation$POSAMT), median(training$POSAMT, na.rm = TRUE), validation$POSAMT),
+    INV_FLAG = ifelse(is.na(validation$INV), 1, 0),
+         INV = ifelse(is.na(validation$INV), median(training$INV, na.rm = TRUE), validation$INV),
+    INVBAL_FLAG = ifelse(is.na(validation$INVBAL), 1, 0),
+         INVBAL = ifelse(is.na(validation$INVBAL), median(training$INVBAL, na.rm = TRUE), validation$INVBAL),
+    CC_FLAG = ifelse(is.na(validation$CC), 1, 0),
+         CC = ifelse(is.na(validation$CC), median(training$CC, na.rm = TRUE), validation$CC),
+    CCBAL_FLAG = ifelse(is.na(validation$CCBAL), 1, 0),
+         CCBAL = ifelse(is.na(validation$CCBAL), median(training$CCBAL, na.rm = TRUE), validation$CCBAL),
+    CCPURC_FLAG = ifelse(is.na(validation$CCPURC), 1, 0),
+         CCPURC = ifelse(is.na(validation$CCPURC), median(training$CCPURC, na.rm = TRUE), validation$CCPURC),
+    INCOME_FLAG = ifelse(is.na(validation$INCOME), 1, 0),
+         INCOME = ifelse(is.na(validation$INCOME), median(training$INCOME, na.rm = TRUE), validation$INCOME),
+    LORES_FLAG = ifelse(is.na(validation$LORES), 1, 0),
+         LORES = ifelse(is.na(validation$LORES), median(training$LORES, na.rm = TRUE), validation$LORES),
+    HMVAL_FLAG = ifelse(is.na(validation$HMVAL), 1, 0),
+         HMVAL = ifelse(is.na(validation$HMVAL), median(training$HMVAL, na.rm = TRUE), validation$HMVAL),
+    AGE_FLAG = ifelse(is.na(validation$AGE), 1, 0),
+         AGE = ifelse(is.na(validation$AGE), median(training$AGE, na.rm = TRUE), validation$AGE),
+    CRSCORE_FLAG = ifelse(is.na(validation$CRSCORE), 1, 0),
+         CRSCORE = ifelse(is.na(validation$CRSCORE), median(training$CRSCORE, na.rm = TRUE), validation$CRSCORE)
+         )
+```
+
+```{r Numeric Handling}
+
+for (col in colnames(training)){ # Iterates through all columns
+
+    if ((!is.character(training[[col]])) & (col != "BRANCH")){ # Skips character variables or BRANCH variable
+      
+      uniques <- length(unique(training[[col]])) # Calculates number of distinct values
+      
+      if (uniques <= 10){ # Only operating on numerics with 10 or fewer distinct values
+        
+        training[[col]] <- as.factor(training[[col]]) # Transforms these variables into factors/categoricals
+        
+      }
+    }
+}
+
+# Creating a train copy where INS is numeric instead of a factor
+#train_num <- training %>% mutate(INS = as.numeric(INS) - 1)
+```
+
+```{r Third Model Development}
+
+# EXECUTES IN 15-17 SECONDS
+training$INS <- as.factor(training$INS)
+tick <- Sys.time() # Start time
+rf.final <- randomForest(INS ~ . - INAREA - LORES - LORES_FLAG - SDB - NSF - NSFAMT, data = training, ntree = 250, importance = TRUE, mtry = 7) 
+tock <- Sys.time() # End time
+time_final <- tock - tick; print(time_final) # Time elapsed
+```
+
+```{r}
+rf.final
+is.numeric(training$INS)
+```
+
+Random Forest Training Output
+```{r Third Model Evaluation}
+# Getting predictions
+#training$INS <- as.factor(training$INS)
+train.copy <- training # Not altering original dataset
+train.copy$INS.numeric <- as.numeric(train.copy$INS) - 1 # Switching back from factor to numeric (necessary for calculations)
+train.copy$INS.predict.probs <- predict(rf.final, type = "prob") # Probabilities for ROC curve
+train.copy$INS.predict.vals <- as.numeric(predict(rf.final, type = "response")) - 1
+  # Switching back from factor to numeric (necessary for calculations)
+
+train.copy <- train.copy %>%
+  relocate(INS, INS.numeric, INS.predict.probs, INS.predict.vals, everything()) # Reordering for better glimpse
+
+# Calculating MAE
+mae_rf.final <- mean(abs(train.copy$INS.predict.vals - train.copy$INS.numeric)); print(paste("Mean Absolute Error (MAE):", round(mae_rf.final, 4)))
+
+# Creating ROC curve
+roc.rf <- rocit(score = train.copy$INS.predict.probs[,"1"], # Want probabilities of success for ROC curve
+             class = train.copy$INS.numeric)
+plot(roc.rf, col = "#1F77B4", lwd = 2, legend = FALSE)
+
+# Saving ROC values for evaluation
+roc.rf.df <- data.frame(
+  cutoff = roc.rf$Cutoff,
+  TPR = roc.rf$TPR,
+  FPR = roc.rf$FPR, 
+  AUC = roc.rf$AUC
+)
+
+roc.rf.df <- roc.rf.df %>% mutate(
+  specificity = 1 - FPR,
+  youden = TPR + (specificity - 1)
+)
+
+opt.rf.cutoff <- roc.rf.df[which.max(roc.rf.df$youden), ]; opt.rf.cutoff # Printing metrics for the best cutoff
+```
+Random Forest Validation Output
+```{r Numeric Handling}
+
+for (col in colnames(validation)){ # Iterates through all columns
+
+    if ((!is.character(validation[[col]])) & (col != "BRANCH")){ # Skips character variables or BRANCH variable
+      
+      uniques <- length(unique(validation[[col]])) # Calculates number of distinct values
+      
+      if (uniques <= 10){ # Only operating on numerics with 10 or fewer distinct values
+        
+        validation[[col]] <- as.factor(validation[[col]]) # Transforms these variables into factors/categoricals
+        
+      }
+    }
+}
+
+
+# Creating a train copy where INS is numeric instead of a factor
+#train_num <- training %>% mutate(INS = as.numeric(INS) - 1)
+```
+
+```{r}
+for (col in names(training)) {
+  if (is.factor(training[[col]])) {
+    training[[col]] <- factor(training[[col]], levels = levels(training[[col]]))
+  }
+}
+
+```
+
+```{r}
+for (col in names(training)) {
+  
+  # If factor in training → factor in validation with identical levels
+  if (is.factor(training[[col]])) {
+    validation[[col]] <- factor(validation[[col]], levels = levels(training[[col]]))
+  }
+  
+  # If numeric in training → numeric in validation
+  else if (is.numeric(training[[col]])) {
+    validation[[col]] <- as.numeric(validation[[col]])
+  }
+  
+  # If character in training → character in validation
+  else if (is.character(training[[col]])) {
+    validation[[col]] <- as.character(validation[[col]])
+  }
+}
+```
+
+```{r Third Model Validation Evaluation}
+validation$PHONE <- as.numeric(validation$PHONE)
+validation$INS.predict.probs <- predict(rf.final, newdata = validation, type = "prob")
+validation$INS.predict.class <- predict(rf.final, newdata = validation, type = "class")
+validation$INS.numeric <- as.numeric(validation$INS) - 1
+roc.rf <- rocit(score = validation$INS.predict.probs[,"1"], # Want probabilities of success for ROC curve
+             class = validation$INS.numeric)
+plot(roc.rf, col = "#1F77B4", lwd = 2, legend = FALSE)
+# Saving ROC values for evaluation
+roc.rf.df <- data.frame(
+  cutoff = roc.rf$Cutoff,
+  TPR = roc.rf$TPR,
+  FPR = roc.rf$FPR,
+  AUC = roc.rf$AUC
+)
+roc.rf.df <- roc.rf.df %>% mutate(
+  specificity = 1 - FPR,
+  youden = TPR + (specificity - 1)
+)
+opt.rf.cutoff2 <- roc.rf.df[which.max(roc.rf.df$youden), ]; opt.rf.cutoff2 # Printing metrics for the best cutoff
+```
+```{r}
+library(iml)
+cols_to_use <- training %>% 
+  dplyr::select(-all_of(c("INAREA", "LORES", "LORES_FLAG", "SDB", "NSF", "NSFAMT"))) %>% 
+  colnames()
+
+pred_rf_reg <- Predictor$new(
+  model = rf.final,
+  data  = training %>% dplyr::select(-INS),
+  y     = training$INS
+)
+
+X_train <- training %>% 
+  dplyr::select(-INS)
+
+y_train_reg <- training$INS
+
+pred_rf_reg <- Predictor$new(
+  model = rf.final,
+  data  = X_train,
+  y     = y_train_reg,
+  predict.function = function(m, newdata) {
+    predict(m, data = newdata, type = "prob")[, "1"]
+  }
+)
+
+pred_rf_reg <- Predictor$new(
+  model = rf.final,
+  data  = X_train,
+  y     = y_train_reg,
+  predict.function = function(m, newdata) {
+    # Ensure factor levels match
+    for (col in colnames(newdata)) {
+      if (is.factor(X_train[[col]])) {
+        newdata[[col]] <- factor(newdata[[col]], levels = levels(X_train[[col]]))
+      }
+    }
+    predict(m, newdata = newdata, type = "prob")[, "1"]
+  }
+)
+
+nrow(X_train)
+
+length(pred_rf_reg$predict(X_train))
+
+```
+
+```{r}
+pdp_rf_reg <- FeatureEffect$new(
+  predictor = pred_rf_reg,
+  feature   = "ACCTAGE",
+  method    = "pdp"
+)
+
+plot(pdp_rf_reg)
+```
+
+
+

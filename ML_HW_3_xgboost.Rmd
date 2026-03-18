@@ -1,0 +1,341 @@
+---
+title: "Homework 3 xgboost"
+author: "Liam Cawley"
+date: "2025-11-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+rm(list= ls()) # Clearing Memory
+```
+
+```{r}
+library(dplyr) # Loading Packages
+library(car)
+library(ggplot2)
+library(tidyverse)
+library(readr)
+library(kableExtra)
+library(knitr)
+library(webshot2)
+library(magick)
+library(survival)
+library(ROCit)
+library(DescTools)
+library(mgcv)
+library(caret)
+library(Metrics)
+library(splines)
+library(segmented)
+library(earth)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(xgboost)
+library(Ckmeans.1d.dp)
+library(pdp)
+library(glmnet)
+```
+
+XGBoost modeling
+Data set-up to correct things from RF
+```{r}
+# Loading data and modifying target variable
+train <- read.csv("insurance_t.csv")
+set.seed(12345) # Set for reproducability of all code
+train <- train %>% 
+  relocate(INS, everything()) %>% # Moving INS up to the front for easier reference
+  mutate(INS = as.factor(INS))
+
+
+# Checking for NAs
+colSums(is.na(train))
+# Following variables have NAs: ACCTAGE, POS, INCOME, POSAMT, LORES, HMVAL, AGE, CRSCORE, INV, INVBAL, PHONE, 
+# CC, CCBAL, CCPURC
+
+# Imputing all missing values with median
+train <- train %>%
+  mutate(
+    ACCTAGE_FLAG = ifelse(is.na(ACCTAGE), 1, 0),
+    ACCTAGE = ifelse(is.na(ACCTAGE), median(ACCTAGE, na.rm = TRUE), ACCTAGE),
+
+    POS_FLAG = ifelse(is.na(POS), 1, 0),
+    POS = ifelse(is.na(POS), median(POS, na.rm = TRUE), POS),
+
+    INCOME_FLAG = ifelse(is.na(INCOME), 1, 0),
+    INCOME = ifelse(is.na(INCOME), median(INCOME, na.rm = TRUE), INCOME),
+
+    POSAMT_FLAG = ifelse(is.na(POSAMT), 1, 0),
+    POSAMT = ifelse(is.na(POSAMT), median(POSAMT, na.rm = TRUE), POSAMT),
+
+    LORES_FLAG = ifelse(is.na(LORES), 1, 0),
+    LORES = ifelse(is.na(LORES), median(LORES, na.rm = TRUE), LORES),
+
+    HMVAL_FLAG = ifelse(is.na(HMVAL), 1, 0),
+    HMVAL = ifelse(is.na(HMVAL), median(HMVAL, na.rm = TRUE), HMVAL),
+
+    AGE_FLAG = ifelse(is.na(AGE), 1, 0),
+    AGE = ifelse(is.na(AGE), median(AGE, na.rm = TRUE), AGE),
+    
+    CRSCORE_FLAG = ifelse(is.na(CRSCORE), 1, 0),
+    CRSCORE = ifelse(is.na(CRSCORE), median(CRSCORE, na.rm = TRUE), CRSCORE),
+
+    INV_FLAG = ifelse(is.na(INV), 1, 0),
+    INV = ifelse(is.na(INV), median(INV, na.rm = TRUE), INV),
+
+    INVBAL_FLAG = ifelse(is.na(INVBAL), 1, 0),
+    INVBAL = ifelse(is.na(INVBAL), median(INVBAL, na.rm = TRUE), INVBAL),
+
+    PHONE_FLAG = ifelse(is.na(PHONE), 1, 0),
+    PHONE = ifelse(is.na(PHONE), median(PHONE, na.rm = TRUE), PHONE),
+
+    CC_FLAG = ifelse(is.na(CC), 1, 0),
+    CC = ifelse(is.na(CC), median(CC, na.rm = TRUE), CC),
+
+    CCBAL_FLAG = ifelse(is.na(CCBAL), 1, 0),
+    CCBAL = ifelse(is.na(CCBAL), median(CCBAL, na.rm = TRUE), CCBAL),
+
+    CCPURC_FLAG = ifelse(is.na(CCPURC), 1, 0),
+    CCPURC = ifelse(is.na(CCPURC), median(CCPURC, na.rm = TRUE), CCPURC)
+  )
+
+# Checking again; no NAs should occur
+colSums(is.na(train))
+
+# Adding random variable for feature selection
+#train$random <- rnorm(nrow(train))
+
+for (col in colnames(train)){ # Iterates through all columns
+
+    if ((!is.character(train[[col]])) & (col != "BRANCH")){ # Skips character variables or BRANCH variable
+      
+      uniques <- length(unique(train[[col]])) # Calculates number of distinct values
+      
+      if (uniques <= 10){ # Only operating on numerics with 10 or fewer distinct values
+        
+        train[[col]] <- as.factor(train[[col]]) # Transforms these variables into factors/categoricals
+        
+      }
+    }
+}
+
+# Creating a train copy where INS is numeric instead of a factor
+train_num <- train %>% mutate(INS = as.numeric(INS) - 1)
+
+```
+
+```{r Optimal XGB Development}
+
+train_x_num <- model.matrix(INS ~ ., data = train_num)[, -1] # Requires numeric response (not factor)
+train_y_num <- train_num$INS
+
+# Re=defining optimal  model based on output from above
+
+xgb.optimal <- xgboost(
+  data = train_x_num, label = train_y_num,
+  nrounds = 100, max_depth = 4,
+  eta = 0.15, gamma = 0, colsample_bytree = 1,
+  min_child_weight = 1, subsample = 0.75,
+  objective = "binary:logistic", verbose = 0
+)
+
+# Variable importance
+xgb.ggplot.importance(xgb.importance(
+  feature_names = colnames(train_x_num),
+  model = xgb.optimal
+))
+
+```
+```{r}
+install.packages("pdp")
+install.packages("ALEPlot")
+```
+```{r}
+pdp_rf_reg <- FeatureEffect$new(
+  predictor = pred_rf_reg,
+  feature   = "ACCTAGE",
+  method    = "pdp"
+)
+
+plot(pdp_rf_reg)
+
+plot(pdp_accage)
+```
+
+
+```{r}
+train_num$INS.predict.probs <- predict(xgb.optimal, train_x_num) # Probabilities for ROC
+```
+
+```{r Optimal XGB Evaluation}
+# Creating ROC curve
+roc.xgb <- rocit(score = train_num$INS.predict.probs, # Want probabilities of success for ROC curve
+             class = train_num$INS)
+plot(roc.xgb, col = "#1F77B4", lwd = 2, legend = FALSE)
+
+  # Saving ROC values for evaluation
+roc.xgb.df <- data.frame(
+  cutoff = roc.xgb$Cutoff,
+  TPR = roc.xgb$TPR,
+  FPR = roc.xgb$FPR, 
+  AUC = roc.xgb$AUC
+)
+
+roc.xgb.df <- roc.xgb.df %>% mutate(
+  specificity = 1 - FPR,
+  youden = TPR + (specificity - 1)
+)
+
+opt.xgb.cutoff <- roc.xgb.df[which.max(roc.xgb.df$youden), ]; opt.xgb.cutoff # Printing metrics for the best cutoff
+
+train_num <- train_num %>%
+  mutate(INS.predict.vals = ifelse(INS.predict.probs > 0.36524, 1, 0)) # Classifications based on optimal cutoff
+
+# Calculating MAE based on optimal cutoff
+mae_xgb.final <- mean(abs(train_num$INS.predict.vals - train_num$INS)); print(paste("Mean Absolute Error (MAE):", round(mae_xgb.final, 4)))
+
+```
+Validation XGBoost
+```{r}
+# Loading data and modifying target variable
+#training <- read.csv("insurance_t.csv")
+validate <- read.csv("insurance_v.csv")
+training <- read.csv("insurance_t.csv")
+set.seed(12345) # Set for reproducability of all code
+validate <- validate %>% 
+  relocate(INS, everything()) %>% # Moving INS up to the front for easier reference
+  mutate(INS = as.factor(INS))
+
+
+# Checking for NAs
+colSums(is.na(validate))
+# Following variables have NAs: ACCTAGE, POS, INCOME, POSAMT, LORES, HMVAL, AGE, CRSCORE, INV, INVBAL, PHONE, 
+# CC, CCBAL, CCPURC
+
+# Imputing all missing values with median
+validate <- validate %>%
+  mutate(
+    ACCTAGE_FLAG = ifelse(is.na(ACCTAGE), 1, 0),
+    ACCTAGE = ifelse(is.na(ACCTAGE), median(training$ACCTAGE, na.rm = TRUE), ACCTAGE),
+
+    POS_FLAG = ifelse(is.na(POS), 1, 0),
+    POS = ifelse(is.na(POS), median(training$POS, na.rm = TRUE), POS),
+
+    INCOME_FLAG = ifelse(is.na(INCOME), 1, 0),
+    INCOME = ifelse(is.na(INCOME), median(training$INCOME, na.rm = TRUE), INCOME),
+
+    POSAMT_FLAG = ifelse(is.na(POSAMT), 1, 0),
+    POSAMT = ifelse(is.na(POSAMT), median(training$POSAMT, na.rm = TRUE), POSAMT),
+
+    LORES_FLAG = ifelse(is.na(LORES), 1, 0),
+    LORES = ifelse(is.na(LORES), median(training$LORES, na.rm = TRUE), LORES),
+
+    HMVAL_FLAG = ifelse(is.na(HMVAL), 1, 0),
+    HMVAL = ifelse(is.na(HMVAL), median(training$HMVAL, na.rm = TRUE), HMVAL),
+
+    AGE_FLAG = ifelse(is.na(AGE), 1, 0),
+    AGE = ifelse(is.na(AGE), median(training$AGE, na.rm = TRUE), AGE),
+    
+    CRSCORE_FLAG = ifelse(is.na(CRSCORE), 1, 0),
+    CRSCORE = ifelse(is.na(CRSCORE), median(training$CRSCORE, na.rm = TRUE), CRSCORE),
+
+    INV_FLAG = ifelse(is.na(INV), 1, 0),
+    INV = ifelse(is.na(INV), median(training$INV, na.rm = TRUE), INV),
+
+    INVBAL_FLAG = ifelse(is.na(INVBAL), 1, 0),
+    INVBAL = ifelse(is.na(INVBAL), median(training$INVBAL, na.rm = TRUE), INVBAL),
+
+    PHONE_FLAG = ifelse(is.na(PHONE), 1, 0),
+    PHONE = ifelse(is.na(PHONE), median(training$PHONE, na.rm = TRUE), PHONE),
+
+    CC_FLAG = ifelse(is.na(CC), 1, 0),
+    CC = ifelse(is.na(CC), median(training$CC, na.rm = TRUE), CC),
+
+    CCBAL_FLAG = ifelse(is.na(CCBAL), 1, 0),
+    CCBAL = ifelse(is.na(CCBAL), median(training$CCBAL, na.rm = TRUE), CCBAL),
+
+    CCPURC_FLAG = ifelse(is.na(CCPURC), 1, 0),
+    CCPURC = ifelse(is.na(CCPURC), median(training$CCPURC, na.rm = TRUE), CCPURC)
+  )
+
+# Checking again; no NAs should occur
+colSums(is.na(validate))
+
+# Adding random variable for feature selection
+#train$random <- rnorm(nrow(train))
+
+for (col in colnames(validate)){ # Iterates through all columns
+
+    if ((!is.character(validate[[col]])) & (col != "BRANCH") & (col != "PHONE")){ # Skips character variables or BRANCH variable
+      
+      uniques <- length(unique(validate[[col]])) # Calculates number of distinct values
+      
+      if (uniques <= 10){ # Only operating on numerics with 10 or fewer distinct values
+        
+        validate[[col]] <- as.factor(validate[[col]]) # Transforms these variables into factors/categoricals
+        
+      }
+    }
+}
+
+for (col in names(training)) {
+  if (is.factor(training[[col]])) {
+    validate[[col]] <- factor(validate[[col]], levels = levels(training[[col]]))
+  }
+}
+
+# Creating a train copy where INS is numeric instead of a factor
+val_num <- validate %>% mutate(INS = as.numeric(INS) - 1)
+val_num$MMCRED5 = 0
+#validate$PHONE <- as.numeric(validate$PHONE)
+
+val_x_num <- model.matrix(INS ~ ., data = val_num)[, -1] # Requires numeric response (not factor)
+
+
+val_y_num <- val_num$INS
+
+val_x_num <- val_x_num[, colnames(train_x_num), drop = FALSE]
+
+```
+
+```{r}
+val_num$INS.predict.probs <- predict(xgb.optimal, val_x_num) # Probabilities for ROC
+
+```
+
+```{r Optimal XGB Validation Evaluation}
+# Creating ROC curve
+roc.xgb <- rocit(score = val_num$INS.predict.probs, # Want probabilities of success for ROC curve
+             class = val_num$INS)
+plot(roc.xgb, col = "#1F77B4", lwd = 2, legend = FALSE)
+
+  # Saving ROC values for evaluation
+roc.xgb.df <- data.frame(
+  cutoff = roc.xgb$Cutoff,
+  TPR = roc.xgb$TPR,
+  FPR = roc.xgb$FPR, 
+  AUC = roc.xgb$AUC
+)
+
+roc.xgb.df <- roc.xgb.df %>% mutate(
+  specificity = 1 - FPR,
+  youden = TPR + (specificity - 1)
+)
+
+opt.xgb.cutoff2 <- roc.xgb.df[which.max(roc.xgb.df$youden), ]; opt.xgb.cutoff2 # Printing metrics for the best cutoff
+```
+
+```{r Model Comparisons}
+compare <- rbind("Random Forest" = opt.rf.cutoff, "XGBoost" = opt.xgb.cutoff, "Mars" = opt.mars.cutoff, "Gam" = opt.gam.cutoff)
+compare
+```
+
+```{r Model Validation Comparisons}
+#XGBoost is producing more positive predictions, which is lowering the specificity, but producing the highest TPR.
+compare2 <- rbind("Random Forest" = opt.rf.cutoff2, "XGBoost" = opt.xgb.cutoff2, "Mars" = opt.mars.cutoff2, "Gam" = opt.gam.cutoff2)
+compare2
+```

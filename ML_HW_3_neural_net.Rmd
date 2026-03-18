@@ -1,0 +1,480 @@
+---
+title: "ML_HW_3"
+output: html_document
+date: "2025-11-19"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# Clearing memory
+rm(list = ls())
+```
+
+```{r}
+# Loading packages
+library(dplyr)
+library(ROCit)
+library(tidyverse)
+library(caret)
+library(nnet)
+library(NeuralNetTools)
+library(iml)      # permutation importance, PD, ICE, ALE, local models, Shapley
+library(caret) # for cross-validation tuning of the neural net
+
+set.seed(12345) # Set for reproducibility of all code
+```
+
+```{r}
+# Loading data and modifying target variable
+training <- read.csv("insurance_t.csv")
+validation <- read.csv("insurance_v.csv")
+
+training <- training %>% 
+  relocate(INS, everything()) %>% # Moving INS up to the front for easier reference
+  mutate(INS = as.factor(INS))
+
+validation <- validation %>% 
+  relocate(INS, everything()) %>% # Moving INS up to the front for easier reference
+  mutate(INS = as.factor(INS))
+```
+
+```{r}
+# Checking for NAs in training
+colSums(is.na(training))
+# Following variables have NAs: ACCTAGE, POS, INCOME, POSAMT, LORES, HMVAL, AGE, CRSCORE, INV, INVBAL, PHONE, 
+# CC, CCBAL, CCPURC
+```
+
+```{r}
+# Checking for NAs in validation
+colSums(is.na(validation))
+# Following variables have NAs: ACCTAGE, POS, INCOME, POSAMT, LORES, HMVAL, AGE, CRSCORE, INV, INVBAL, PHONE, 
+# CC, CCBAL, CCPURC
+```
+
+```{r}
+# save median values to use for imputing in the validation data
+median_ACCTAGE = median(training$ACCTAGE, na.rm = TRUE)
+median_POS = median(training$POS, na.rm = TRUE)
+median_INCOME = median(training$INCOME, na.rm = TRUE)
+median_POSAMT = median(training$POSAMT, na.rm = TRUE)
+median_LORES = median(training$LORES, na.rm = TRUE)
+median_HMVAL = median(training$HMVAL, na.rm = TRUE)
+median_AGE = median(training$AGE, na.rm = TRUE)
+median_CRSCORE = median(training$CRSCORE, na.rm = TRUE)
+median_INV = median(training$INV, na.rm = TRUE)
+median_INVBAL = median(training$INVBAL, na.rm = TRUE)
+median_PHONE = median(training$PHONE, na.rm = TRUE)
+median_CC = median(training$CC, na.rm = TRUE)
+median_CCBAL = median(training$CCBAL, na.rm = TRUE)
+median_CCPURC = median(training$CCPURC, na.rm = TRUE)
+
+# Imputing all missing values in training with median
+training <- training %>%
+  mutate(
+    ACCTAGE_FLAG = ifelse(is.na(ACCTAGE), 1, 0),
+    ACCTAGE = ifelse(is.na(ACCTAGE), median_ACCTAGE, ACCTAGE),
+
+    POS_FLAG = ifelse(is.na(POS), 1, 0),
+    POS = ifelse(is.na(POS), median_POS, POS),
+
+    INCOME_FLAG = ifelse(is.na(INCOME), 1, 0),
+    INCOME = ifelse(is.na(INCOME), median_INCOME, INCOME),
+
+    POSAMT_FLAG = ifelse(is.na(POSAMT), 1, 0),
+    POSAMT = ifelse(is.na(POSAMT), median_POSAMT, POSAMT),
+
+    LORES_FLAG = ifelse(is.na(LORES), 1, 0),
+    LORES = ifelse(is.na(LORES), median_LORES, LORES),
+
+    HMVAL_FLAG = ifelse(is.na(HMVAL), 1, 0),
+    HMVAL = ifelse(is.na(HMVAL), median_HMVAL, HMVAL),
+
+    AGE_FLAG = ifelse(is.na(AGE), 1, 0),
+    AGE = ifelse(is.na(AGE), median_AGE, AGE),
+    
+    CRSCORE_FLAG = ifelse(is.na(CRSCORE), 1, 0),
+    CRSCORE = ifelse(is.na(CRSCORE), median_CRSCORE, CRSCORE),
+
+    INV_FLAG = ifelse(is.na(INV), 1, 0),
+    INV = ifelse(is.na(INV), median_INV, INV),
+
+    INVBAL_FLAG = ifelse(is.na(INVBAL), 1, 0),
+    INVBAL = ifelse(is.na(INVBAL), median_INVBAL, INVBAL),
+
+    PHONE_FLAG = ifelse(is.na(PHONE), 1, 0),
+    PHONE = ifelse(is.na(PHONE), median_PHONE, PHONE),
+
+    CC_FLAG = ifelse(is.na(CC), 1, 0),
+    CC = ifelse(is.na(CC), median_CC, CC),
+
+    CCBAL_FLAG = ifelse(is.na(CCBAL), 1, 0),
+    CCBAL = ifelse(is.na(CCBAL), median_CCBAL, CCBAL),
+
+    CCPURC_FLAG = ifelse(is.na(CCPURC), 1, 0),
+    CCPURC = ifelse(is.na(CCPURC), median_CCPURC, CCPURC)
+  )
+```
+
+```{r}
+# Checking that there are no more NAs in training
+colSums(is.na(training))
+```
+
+```{r}
+# Imputing all missing values in validation with median
+validation <- validation %>%
+  mutate(
+    ACCTAGE_FLAG = ifelse(is.na(ACCTAGE), 1, 0),
+    ACCTAGE = ifelse(is.na(ACCTAGE), median_ACCTAGE, ACCTAGE),
+
+    POS_FLAG = ifelse(is.na(POS), 1, 0),
+    POS = ifelse(is.na(POS), median_POS, POS),
+
+    INCOME_FLAG = ifelse(is.na(INCOME), 1, 0),
+    INCOME = ifelse(is.na(INCOME), median_INCOME, INCOME),
+
+    POSAMT_FLAG = ifelse(is.na(POSAMT), 1, 0),
+    POSAMT = ifelse(is.na(POSAMT), median_POSAMT, POSAMT),
+
+    LORES_FLAG = ifelse(is.na(LORES), 1, 0),
+    LORES = ifelse(is.na(LORES), median_LORES, LORES),
+
+    HMVAL_FLAG = ifelse(is.na(HMVAL), 1, 0),
+    HMVAL = ifelse(is.na(HMVAL), median_HMVAL, HMVAL),
+
+    AGE_FLAG = ifelse(is.na(AGE), 1, 0),
+    AGE = ifelse(is.na(AGE), median_AGE, AGE),
+    
+    CRSCORE_FLAG = ifelse(is.na(CRSCORE), 1, 0),
+    CRSCORE = ifelse(is.na(CRSCORE), median_CRSCORE, CRSCORE),
+
+    INV_FLAG = ifelse(is.na(INV), 1, 0),
+    INV = ifelse(is.na(INV), median_INV, INV),
+
+    INVBAL_FLAG = ifelse(is.na(INVBAL), 1, 0),
+    INVBAL = ifelse(is.na(INVBAL), median_INVBAL, INVBAL),
+
+    PHONE_FLAG = ifelse(is.na(PHONE), 1, 0),
+    PHONE = ifelse(is.na(PHONE), median_PHONE, PHONE),
+
+    CC_FLAG = ifelse(is.na(CC), 1, 0),
+    CC = ifelse(is.na(CC), median_CC, CC),
+
+    CCBAL_FLAG = ifelse(is.na(CCBAL), 1, 0),
+    CCBAL = ifelse(is.na(CCBAL), median_CCBAL, CCBAL),
+
+    CCPURC_FLAG = ifelse(is.na(CCPURC), 1, 0),
+    CCPURC = ifelse(is.na(CCPURC), median_CCPURC, CCPURC)
+  )
+```
+
+```{r}
+# Checking that there are no more NAs in validation
+colSums(is.na(validation))
+```
+
+```{r}
+# making a copy of the training dataset for use later
+training_copy <- training
+```
+
+```{r}
+# FOR TRAINING: except for Branch of Bank, makes sure that any variable with more than 10 distinct values is continuous
+for (col in colnames(training)){ # Iterates through all columns
+
+    if ((!is.character(training[[col]])) & (col != "BRANCH")){ # Skips character variables or BRANCH variable
+      
+      uniques <- length(unique(training[[col]])) # Calculates number of distinct values
+      
+      if (uniques <= 10){ # Only operating on numerics with 10 or fewer distinct values
+        
+        training_copy[[col]] <- as.factor(training_copy[[col]]) # Transforms these variables into factors/categoricals
+        
+      }
+    }
+}
+```
+
+```{r}
+# FOR VALIDATION: except for Branch of Bank, makes sure that any variable with more than 10 distinct values is continuous
+# updating the same columns as we did in the training dataset
+for (col in colnames(validation)){ # Iterates through all columns
+
+    if ((!is.character(training[[col]])) & (col != "BRANCH")){ # Skips character variables or BRANCH variable
+      
+      uniques <- length(unique(training[[col]])) # Calculates number of distinct values
+      
+      if (uniques <= 10){ # Only operating on numerics with 10 or fewer distinct values
+        
+        validation[[col]] <- as.factor(validation[[col]]) # Transforms these variables into factors/categoricals
+        
+      }
+    }
+}
+```
+
+## Neural Net Modeling
+
+```{r}
+# setting this column to 0 because it gets lost in the dummy coding step
+validation$MMCRED5 <- 0
+```
+
+```{r}
+# Convert categorical predictors into dummy numeric columns
+x_train <- model.matrix(INS ~ ., data = training_copy)[, -1]
+y_train <- training$INS
+
+x_test  <- model.matrix(INS ~ ., data = validation)[, -1]
+y_test  <- validation$INS
+```
+
+```{r}
+# checking column differences between x_train and x_test: see that there is no difference in columns, but the order of the columns is mismatched
+
+train_names <- colnames(x_train)
+val_names <- colnames(x_test)
+cat("\n=== Missing in validation ===\n")
+print(setdiff(train_names, val_names))
+cat("\n=== Extra in validation ===\n")
+print(setdiff(val_names, train_names))
+cat("\n=== Same names but wrong order? ===\n")
+print(!identical(train_names, val_names))
+```
+
+```{r}
+# puts columns in validation data in the right order
+x_test <- x_test[, colnames(x_train), drop = FALSE]
+```
+
+```{r}
+# check that everything looks good now
+train_names <- colnames(x_train)
+val_names <- colnames(x_test)
+cat("\n=== Missing in validation ===\n")
+print(setdiff(train_names, val_names))
+cat("\n=== Extra in validation ===\n")
+print(setdiff(val_names, train_names))
+cat("\n=== Same names but wrong order? ===\n")
+print(!identical(train_names, val_names))
+```
+
+```{r}
+# Drop low-variance predictors and scale for stable training
+nzv <- nearZeroVar(x_train)
+if (length(nzv) > 0) {
+  x_train <- x_train[, -nzv, drop = FALSE]
+  x_test  <- x_test[, -nzv, drop = FALSE]
+}
+```
+
+
+```{r}
+# scale and center the x-variables
+x_train <- scale(x_train)
+x_test  <- scale(x_test, center = attr(x_train, "scaled:center"),
+                 scale = attr(x_train, "scaled:scale"))
+```
+
+```{r}
+# make sure the y-variable is a factor
+y_train <- as.factor(y_train)
+y_test <- as.factor(y_test)
+```
+
+```{r}
+# create a numeric version of the validation y-variable
+y_test_numeric <- as.numeric(as.character(y_test))
+```
+
+```{r}
+# Combine into a single training dataframe
+train_df <- data.frame(y = y_train, x_train)
+```
+
+NEURAL NETWORK
+
+```{r}
+# tuning size and decay parameters using cross-validation
+# Output: optimal size is 5 and decay is 1
+# TAKES ABOUT 2 MIN TO RUN - don't need to re-run this since already included the parameters in the model below
+tune_grid <- expand.grid(size = c(3,5,7,9), decay = c(0,0.1,0.5,1))
+ctrl <- trainControl(method = "cv", number = 5)
+
+nn.tuned <- caret::train(
+  x = x_train, y = y_train,
+  method = "nnet",
+  tuneGrid = tune_grid,
+  trControl = ctrl,
+  linout = FALSE,
+  trace = FALSE
+)
+
+nn.tuned$bestTune
+```
+
+```{r}
+# plot that compares the performance of the different size and decay parameter options
+plot(nn.tuned)
+```
+
+
+```{r}
+# creating and plotting the neural net
+set.seed(12345) # setting for reproducibility
+nn.INS <- nnet(
+  y_train ~ ., 
+  data = x_train, 
+  size = 5, # number of hidden units,
+  decay = 1, # weight decay parameter, used for regularization to prevent overfitting by penalizing large weights
+  linout = FALSE, # classification
+  trace = FALSE)
+plotnet(nn.INS)
+```
+
+
+```{r}
+# predict the probabilities and make it a vector
+predict_probs <- predict(nn.INS, x_test, type = "raw")
+predict_probs <- as.vector(predict_probs)
+```
+
+```{r}
+# creating ROC curve
+roc_nn <- rocit(score = predict_probs, class = y_test_numeric)
+plot(roc_nn, col = "#1F77B4", lwd = 2, legend = FALSE)
+```
+
+```{r}
+# Saving ROC values for evaluation
+roc_nn_df <- data.frame(
+  cutoff = roc_nn$Cutoff,
+  TPR = roc_nn$TPR,
+  FPR = roc_nn$FPR, 
+  AUC = roc_nn$AUC
+)
+
+roc_nn_df <- roc_nn_df %>% mutate(
+  specificity = 1 - FPR,
+  youden = TPR + (specificity - 1)
+)
+
+# Printing metrics for the best cutoff
+opt.roc_nn.cutoff <- roc_nn_df[which.max(roc_nn_df$youden), ]
+opt.roc_nn.cutoff
+```
+
+# compute Permutation Importance
+
+```{r}
+# prediction function for the Predictor object below
+predict_fun <- function(model, newdata) {
+  # nnet requires data.frame with same column names
+  prob <- predict(model, newdata, type = "raw")
+  return(as.numeric(prob))  
+}
+```
+
+```{r}
+# create the Predictor object
+predictor <- Predictor$new(
+  model = nn.INS,
+  data = as.data.frame(x_test),
+  y = y_test_numeric,   # iml wants numeric for loss functions
+  predict.function = predict_fun,
+  type = "prob"
+)
+```
+
+```{r}
+# compute permutation feature importance using log-loss
+imp <- FeatureImp$new(
+  predictor,
+  loss = "logLoss",
+  compare = "difference", # absolute increase in loss due to permutation (can do compare = "ratio" for relative diff)
+  n.repetitions = 5     # optional but recommended
+)
+
+plot(imp)
+```
+
+```{r}
+top10$feature
+```
+
+
+```{r}
+# just the top ten features
+
+top10 <- imp$results %>%
+  arrange(desc(importance)) %>%
+  slice_head(n = 10)
+
+top10 <- top10 %>%
+  mutate(feature = c("Savings Acct. Balance", "Checking Acct. Balance", "CD Acct. Indicator", "Checking Acct. Indicator", "MM Acct. Indicator", "Total ATM Withdrawal", "Credit Card Indicator", "Retirement Acct. Indicator", "# Teller Interactions", "# Checks Written"))
+                     
+# Plot only the top 10
+ggplot(top10, aes(x = reorder(feature, importance),
+                  y = importance)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(
+    x = "",
+    y = "Increase in Log Loss",
+    caption = "Acct. = Account"
+  ) +
+  theme_minimal()
+
+```
+
+```{r}
+# just the top five features
+
+top5 <- imp$results %>%
+  arrange(desc(importance)) %>%
+  slice_head(n = 5)
+
+top5 <- top5 %>%
+  mutate(feature = c("Savings Acct. Balance", "Checking Acct. Balance", "CD Acct. Indicator", "Checking Acct. Indicator", "MM Acct. Indicator"))
+                     
+# Plot only the top 5
+ggplot(top5, aes(x = reorder(feature, importance),
+                  y = importance)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(
+    x = "",
+    y = "Increase in Log Loss",
+    caption = "Acct. = Account"
+  ) +
+  theme_minimal()
+
+```
+
+
+```{r}
+# Extract importance results into a data frame
+# the importance value represents the average increase in log-loss when feature is permuted
+# Importance classification (imp_classif) based on:
+# rule of thumb:
+# > 0.01 → strong feature
+# 0.003–0.01 → moderately useful
+# 0-0.003 → likely unimportant
+# < 0 → Shuffling improves model performance:probably noise
+
+importance_table <- imp$results %>%
+  dplyr::select(feature, importance) %>%
+  mutate(imp_classif = case_when(
+    importance > 0.01 ~ "Strong",
+    importance >= 0.003 & importance <= 0.01 ~ "Moderate",
+    importance >= 0 & importance < 0.003 ~ "Weak",
+    importance < 0 ~ "Likely noise"
+    )
+  )
+
+print(importance_table)
+```
